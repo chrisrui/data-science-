@@ -1,0 +1,48 @@
+import pandas as pd
+import numpy as np
+
+touchpoint_data = pd.DataFrame({
+    'from_touchpoint': ['Ad', 'Ad', 'Ad', 'Email', 'Email', 'Social Media', 'Direct', 'Organic', 'Email'],
+    'to_touchpoint': ['Email', 'Social Media', 'Email', 'Direct', 'Organic', 'Email', 'Email', 'Email', 'Direct']
+})
+
+# Create contingency table of touchpoint transitions
+transitions_matrix = pd.crosstab(touchpoint_data['from_touchpoint'], touchpoint_data['to_touchpoint'])
+
+# Normalize the contingency table to get transition probabilities
+transition_probabilities = transitions_matrix.div(transitions_matrix.sum(axis=1), axis=0).values.tolist()
+
+# Print the transition probabilities
+print(transition_probabilities)
+
+# output
+[[0.0, 0.6666666666666666, 0.0, 0.3333333333333333], [0.2, 0.2, 0.2, 0.4], [0.0, 1.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]]
+
+
+
+# Create the Markov Chain model
+def markov_chain_model(states, transition_probabilities, start_state, num_steps):
+    state_sequence = [start_state]
+    current_state = start_state
+    for i in range(num_steps):
+        next_state_index = np.random.choice(len(states), p=transition_probabilities[states.index(current_state)])
+        current_state = states[next_state_index]
+        state_sequence.append(current_state)
+    return state_sequence
+
+# Apply the Markov Chain model to each customer journey
+customer_journeys = []
+for _, journey in touchpoint_data.groupby("customer_id"):
+    customer_journeys.append(markov_chain_model(states, transition_probabilities, journey.iloc[0]['touchpoint'], len(journey)))
+    
+# Calculate the attribution for each touchpoint
+touchpoint_attribution = {}
+for i, touchpoint in enumerate(states):
+    touchpoint_attribution[touchpoint] = 0
+    for journey in customer_journeys:
+        touchpoint_count = journey.count(touchpoint)
+        touchpoint_attribution[touchpoint] += touchpoint_count / len(customer_journeys)
+
+# Print the touchpoint attribution results
+for touchpoint, attribution in touchpoint_attribution.items():
+    print(f"{touchpoint}: {attribution}")
