@@ -1,0 +1,61 @@
+import pandas as pd
+import geopandas as gpd
+from shapely.geometry import Polygon
+
+# 读取数据
+file_path = '/mnt/data/楼盘密集度.xlsx'
+data = pd.read_excel(file_path)
+
+# 消除重复项
+cleaned_data = data.drop_duplicates(subset=['resblockname', 'border'])
+
+# 解析border列的坐标的辅助函数
+def parse_coords(border_coords):
+    if pd.isna(border_coords):
+        return None
+    coords = [tuple(map(float, coord.split(','))) for coord in border_coords.split(';')]
+    return Polygon(coords).buffer(0)
+
+# 定义搜索多边形范围
+search_polygon_coords = [(121.2, 31.1), (121.3, 31.1), (121.3, 31.2), (121.2, 31.2)]
+search_polygon = Polygon(search_polygon_coords)
+search_gdf = gpd.GeoDataFrame(geometry=[search_polygon], crs="EPSG:4326")
+search_area = search_gdf.to_crs(epsg=3395).area.iloc[0]
+
+# 使用清理后的数据集重新计算地理空间属性
+cleaned_properties_gdf = gpd.GeoDataFrame(cleaned_data, crs="EPSG:4326")
+cleaned_properties_gdf['geometry'] = cleaned_properties_gdf['border'].apply(parse_coords)
+
+# 筛选与搜索区域有交集的几何体
+cleaned_properties_with_intersection = cleaned_properties_gdf[cleaned_properties_gdf.intersects(search_polygon)]
+
+# 存储在搜索范围内的数据的交集面积总和
+total_intersection_area = 0
+
+# 存储每个属性的名称、面积和密度
+cleaned_property_areas_and_density = []
+
+# 遍历筛选后的数据集
+for index, row in cleaned_properties_with_intersection.iterrows():
+    property_polygon = row['geometry']
+    intersection = search_gdf.geometry.iloc[0].intersection(property_polygon)
+    intersection_gdf = gpd.GeoDataFrame(geometry=[intersection], crs="EPSG:4326")
+    intersection_area = intersection_gdf.to_crs(epsg=3395).area.iloc[0]
+    total_intersection_area += intersection_area
+
+    # 计算属性的总面积和密度
+    property_area = gpd.GeoDataFrame(geometry=[property_polygon], crs="EPSG:4326").to_crs(epsg=3395).area.iloc[0]
+    density = intersection_area / search_area if search_area != 0 else 0
+
+    cleaned_property_areas_and_density.append((row['resblockname'], property_area, density))
+
+# 按密度排序，并获取占比最高的三个属性
+top_3_properties_cleaned = sorted(cleaned_property_areas_and_density, key=lambda x: -x[2])[:3]
+
+result = {
+    "total_intersection_area": total_intersection_area,
+    "search_area": search_area,
+    "top_3_properties": top_3_properties_cleaned
+}
+
+print(result)
